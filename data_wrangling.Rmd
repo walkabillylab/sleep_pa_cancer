@@ -1,0 +1,29 @@
+---
+title: "Data Wrangling"
+author: "Daniel Fuller"
+date: "26/11/2021"
+output:
+      html_document:
+        keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl)
+```
+
+# Data Wrangling for Sleep, PA, and Cancer study
+
+```{r}
+
+path <- file.path("/Users/dfuller/Documents/Ryan Collins Thesis/sleep_pa_cancer/Participant Data/P001 Data.xlsx")
+
+test <- path %>% 
+  excel_sheets() %>% 
+  set_names() %>% 
+  map_df(~ read_excel(path = path, sheet = .x), .id = "sheet") 
+
+
+```
+
