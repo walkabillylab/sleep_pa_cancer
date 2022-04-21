@@ -10,8 +10,6 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(readxl)
-library(tidyquant)
 library(lubridate)
 library(rstatix)
 ```
@@ -19,74 +17,30 @@ library(rstatix)
 # Data Wrangling for Sleep, PA, and Cancer study
 
 ```{r}
-excel_path <- list.files("/Users/dfuller/Documents/Ryan Collins Thesis/sleep_pa_cancer/Participant Data/", pattern = '*.xlsx', full.names = TRUE) %>%
-    set_names()
+sleep_data_temp <- NULL
 
-### Time 1 
-combine_excel_1 <- map_dfr(excel_path, ~read_excel(., sheet = "T1"), .id = "filename") 
-combine_excel_1$wave <- 1
-combine_excel_1 <- combine_excel_1 %>% 
-                mutate(p_id = str_sub(filename, 80, 83),
-                       time = str_sub(Time, 12, 20)
-                )
-combine_excel_1 <- combine_excel_1 %>% select(p_id, wave, Date, time, ZCM, SLEEP1)
-glimpse(combine_excel_1)
-participants_w1 <- table(combine_excel_1$p_id)
-participants_w1
-colSums(is.na(combine_excel_1))
+sleep_data_temp <- dir(path = "Participant Data/", full.names = TRUE, pattern = "*.csv", recursive = TRUE) %>%
+   purrr::map(function(i){
+     dfhx <- read.csv(i, header = TRUE)
+     dfhx$p_id <- stringr::str_sub(i, 19, 22)
+     dfhx$time <- stringr::str_sub(i, 30, 31)
+     sleep_data_temp <- bind_rows(sleep_data_temp, dfhx)
+   })
 
+merged_data <- bind_rows(sleep_data_temp)
 
-### Wave 2
-combine_excel_2 <- map_dfr(excel_path, ~read_excel(., sheet = "T2"), .id = "filename") 
-combine_excel_2$wave <- 2
-combine_excel_2 <- combine_excel_2 %>% 
-                mutate(p_id = str_sub(filename, 80, 83),
-                       time = str_sub(Time, 12, 20)
-                )
-combine_excel_2 <- combine_excel_2 %>% select(p_id, wave, Date, time, ZCM, SLEEP1)
-glimpse(combine_excel_2)
-participants_w2 <- table(combine_excel_2$p_id)
-participants_w2
+glimpse(merged_data)
 
-## Wave 3 
-combine_excel_3 <- map_dfr(excel_path, ~read_excel(., sheet = "T3"), .id = "filename") 
-combine_excel_3$wave <- 3
-combine_excel_3 <- combine_excel_3 %>% 
-                mutate(p_id = str_sub(filename, 80, 83),
-                       time = str_sub(Time, 12, 20)
-                )
-combine_excel_3 <- combine_excel_3 %>% select(p_id, wave, Date, time, ZCM, SLEEP1)
-glimpse(combine_excel_3)
-participants_w3 <- table(combine_excel_3$p_id)
-participants_w3
+table(merged_data$p_id)
+table(merged_data$time)
 
-
-## Wave 4
-combine_excel_4 <- map_dfr(excel_path, ~read_excel(., sheet = "T4"), .id = "filename") 
-combine_excel_4$wave <- 4
-combine_excel_4 <- combine_excel_4 %>% 
-                mutate(p_id = str_sub(filename, 80, 83),
-                       time = str_sub(Time, 12, 20)
-                )
-combine_excel_4 <- combine_excel_4 %>% select(p_id, wave, Date, time, ZCM, SLEEP1)
-glimpse(combine_excel_4)
-participants_w4 <- table(combine_excel_4$p_id)
-participants_w4
-
-merged_data <- bind_rows(combine_excel_1, combine_excel_2, combine_excel_3, combine_excel_4)
-
-rm(combine_excel_1, combine_excel_2, combine_excel_3, combine_excel_4)
-
-write_csv(merged_data, "/Users/dfuller/Documents/Ryan Collins Thesis/sleep_pa_cancer/merged_data.csv")
+rm(sleep_data_temp)
 ```
-
-There are many many NAs in the sleep data. Not sure how this is calculated in the software or how we can extract this if we need it from the data we have. For example for Wave 1 we have 2769877 NAs for Sleep out of 3144011 data points. Many participants have no SLEEP1 data for entire wave. 
 
 ### Combining the time variables and creating a week variable
 
 ```{r}
-merged_data$date_time <- with(merged_data, ymd(Date) + hms(time))
-merged_data$date_time <- as.POSIXct(merged_data$date_time)
+merged_data$date_time <- with(merged_data, mdy(Date) + hms(Time))
 
 merged_data$week_year <- week(merged_data$date_time)
 merged_data$day <- day(merged_data$date_time)
@@ -105,12 +59,16 @@ Moran DS, Heled Y, Gonzalez RR. Metabolic rate monitoring and energy expenditure
 ```{r}
 merged_data <- merged_data %>% 
                 mutate(activity_type = case_when(
-                  ZCM >= 40 ~ "MVPA",
+                  ZCM >= 45 ~ "MVPA",
                   ZCM == 0 ~ "Sleep",
                   ZCM > 0 & ZCM < 40 ~ "Sed_Light"
                 ))
 
 table(merged_data$activity_type)
+
+summary(merged_data$SLEEP1)
+
+merged_data$sleep <- merged_data$SLEEP1
 ```
 
 ## Creating total time of week for summary activities
@@ -131,7 +89,14 @@ merged_data <- merged_data %>%
 	))
 
 merged_data <- merged_data %>%
-	mutate(sleep_minutes = case_when(
+	mutate(sed_light_minutes = case_when(
+		activity_type == "Sed_Light" ~ 1,
+		activity_type == "Sleep" ~ 0,
+		activity_type == "MVPA" ~ 0
+	))
+
+merged_data <- merged_data %>%
+	mutate(sleep_minutes_zcm = case_when(
 		activity_type == "Sed_Light" ~ 0,
 		activity_type == "Sleep" ~ 1,
 		activity_type == "MVPA" ~ 0
@@ -141,41 +106,88 @@ merged_data <- merged_data %>%
 ### Summary Statistics - Sleep
 
 ```{r}
+merged_data$total_sleep_mvpa_light <- merged_data$sleep + merged_data$mvpa_minutes + merged_data$sed_light_minutes
+merged_data$total_sleep_mvpa_light_zcm <- merged_data$sleep_minutes_zcm + merged_data$mvpa_minutes + merged_data$sed_light_minutes
+
+merged_data$day <- as.factor(merged_data$day)
+
 day <- merged_data %>%
-  group_by(p_id, day, wave) %>%
-    summarise(sleep_minutes = sum(sleep_minutes),
+  group_by(p_id, day, time) %>%
+    summarise(sleep_minutes = sum(sleep),
+              sleep_minutes_zcm = sum(sleep_minutes_zcm),
               mvpa_minutes = sum(mvpa_minutes),
+              sed_light_minutes = sum(sed_light_minutes),
               sed_light_mvpa_minutes = sum(sed_light_mvpa_minutes),
+              total_sleep_mvpa_light = sum(total_sleep_mvpa_light),
+              total_sleep_mvpa_light_zcm = sum(total_sleep_mvpa_light_zcm),
               zcm = mean(ZCM),
               total_minutes = n()
               )
+
 day$zcm <- as.integer(day$zcm)
-
 summary(day$total_minutes)
+```
+
+A few observations are 7200 minutes in one day. Not sure why. Removing those observations. Prior to removing the observations there are 6989 observations in the day level dataset. 
+
+```{r}
 day <- filter(day, total_minutes <= 1440)
+```
 
+The new dataset has 6696 observations so we have removed 293 days of data, which represents 4.1% of the data. This is pretty normal. 
 
+## Checking sleep data
+
+```{r}
+merged_data$sleep = merged_data$SLEEP1
+
+merged_data$sleep_merge <- merged_data$sleep + merged_data$sleep_minutes_zcm
+
+summary(merged_data$sleep_merge)
+
+table(merged_data$sleep_merge)
+```
+
+Around 10% of the observations have sleep in for the SLEEP1 variable or the ZCM variable but not both. This tends to be more more on the SLEEP1 variable. 
+
+## Plot of ZCM sleep versus SLEEP1 variable
+
+```{r}
+sleep_plot <- ggplot(day, aes(x = sleep_minutes_zcm, y = sleep_minutes)) +
+              geom_point() +
+              theme_classic()
+plot(sleep_plot)
+
+cor(x = day$sleep_minutes_zcm, y = day$sleep_minutes, use = "complete.obs")
+```
+
+Correlation between the two is high but SLEEP1 variable tends to be higher based on the plot
+
+```{r}
 day %>%
-  group_by(wave) %>%
+  group_by(time) %>%
     get_summary_stats(sleep_minutes)
 
 day %>%
-  group_by(wave) %>%
+  group_by(time) %>%
+    get_summary_stats(sleep_minutes_zcm)
+
+day %>%
+  group_by(time) %>%
     get_summary_stats(mvpa_minutes)
 
 day %>%
-  group_by(wave) %>%
-    get_summary_stats(sed_light_mvpa_minutes)
+  group_by(time) %>%
+    get_summary_stats(sed_light_minutes)
 ```
 
-There are around 270 cases where the total time is greater than 1440 minutes, which is impossible. This is likely caused by accelerometer error or excel data storage being silly at the end of the file. I will remove those days. Average sleep minutes are around 950 per day, meaning they are sleeping around 16 hours per day. Maybe they are sleeping this much. There are many days were pepole are in sleep the entire time. The MVPA per day is around 300 minutes and is very consistent across the waves. This is too much MVPA but the threshold we are using might be low as well. Sed, light and MVPA is around 400 minutes per day (6.6 hours). That is not unreasonable. 
-
+Average sleep minutes are around 990minutes with the SLEEP1 variable and 930minutes with the ZCM method per day, meaning they are sleeping around 16.5 hours per day or 15.5 hours per day. Maybe they are sleeping this much. There are many days were pepole are in sleep the entire time. The MVPA per day is around 300 minutes and is very consistent across the waves. This is too much MVPA but the threshold we are using might be low as well. Sed, light is around 110 minutes per day (1.8 hours). That is pretty low.  
 
 ### Checking daily MVPA and sleep overtime
 
 ### Plot for Sleep 
 ```{r}
-sleep_plot <- ggplot(day, aes(x = day, y = sleep_minutes, group = wave, colour = factor(wave))) +
+sleep_plot <- ggplot(day, aes(x = day, y = sleep_minutes_zcm, group = time, colour = factor(time))) +
               geom_boxplot() +
               theme_classic()
 plot(sleep_plot)
@@ -183,17 +195,40 @@ plot(sleep_plot)
 
 ### Plot for MVPA
 ```{r}
-mvpa_plot <- ggplot(day, aes(x = day, y = mvpa_minutes, group = wave, colour = factor(wave))) +
+mvpa_plot <- ggplot(day, aes(x = day, y = mvpa_minutes, group = time, colour = factor(time))) +
               geom_boxplot() +
               theme_classic()
 plot(mvpa_plot)
 ```
 
-
-### Plot for Sed, Light, MVPA
+### Plot for Sed, Light
 ```{r}
-all_activity_plot <- ggplot(day, aes(x = day, y = sed_light_mvpa_minutes, group = wave, colour = factor(wave))) +
+all_activity_plot <- ggplot(day, aes(x = day, y = sed_light_mvpa_minutes, group = time, colour = factor(time))) +
               geom_boxplot() +
               theme_classic()
 plot(all_activity_plot)
 ```
+
+# Aggregating to the day level 
+
+```{r}
+day_only <- day %>%
+  group_by(p_id, time) %>%
+    summarise(sleep_minutes = median(sleep_minutes, na.rm = TRUE),
+              sleep_minutes_zcm = mean(sleep_minutes_zcm, na.rm = TRUE),
+              mvpa_minutes = mean(mvpa_minutes, na.rm = TRUE),
+              sed_light_minutes = mean(sed_light_minutes, na.rm = TRUE),
+              sed_light_mvpa_minutes = mean(sed_light_mvpa_minutes, na.rm = TRUE),
+              total_sleep_mvpa_light = mean(total_sleep_mvpa_light, na.rm = TRUE),
+              total_sleep_mvpa_light_zcm = mean(total_sleep_mvpa_light_zcm, na.rm = TRUE),
+              )
+```
+
+# Writing CSV files
+
+```{r}
+write_csv(day, "participant_days.csv")
+
+write_csv(day_only, "days.csv")
+```
+
