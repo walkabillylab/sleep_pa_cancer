@@ -116,6 +116,8 @@ merged_data <- merged_data %>%
                   ZCM > 0 & ZCM < 40 ~ "Sed_Light"
                 ))
 
+#SLEEP1 == 0 and ZCM > 5? 
+
 table(merged_data$activity_type)
 ```
 
@@ -414,7 +416,20 @@ day_only <- day %>%
 
 ```r
 write_csv(day, "participant_days.csv")
-
 write_csv(day_only, "days.csv")
+```
+
+# Pivoting and writing to SAV (SPSS) format
+
+
+```r
+day_only <- as.data.frame(day_only)
+
+day_only_wide <- reshape(day_only, direction = "wide", idvar = "p_id", timevar = "time", v.names = c("sleep_minutes", "sleep_minutes_zcm", "mvpa_minutes", "sed_light_minutes", "sed_light_mvpa_minutes", "total_sleep_mvpa_light", "total_sleep_mvpa_light_zcm"), sep = "_")
+
+day_only_wide$ParticipantNumber <- seq(1:97)
+
+## SAV
+write_sav(day_only_wide, "days_wide.sav")
 ```
 
