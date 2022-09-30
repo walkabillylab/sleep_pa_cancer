@@ -22,9 +22,9 @@ sleep_data_temp <- NULL
 
 sleep_data_temp <- dir(path = "Participant Data/", full.names = TRUE, pattern = "*.csv", recursive = TRUE) %>%
    purrr::map(function(i){
-     dfhx <- read.csv(i, header = TRUE)
-     dfhx$p_id <- stringr::str_sub(i, 19, 22)
-     dfhx$time <- stringr::str_sub(i, 30, 31)
+     dfhx <- read_csv(i, col_types = cols(.default = col_character()))
+     dfhx$p_id <- stringr::str_sub(i, 19, 21)
+     dfhx$time <- stringr::str_sub(i, 23, 24)
      sleep_data_temp <- bind_rows(sleep_data_temp, dfhx)
    })
 
@@ -61,17 +61,25 @@ Moran DS, Heled Y, Gonzalez RR. Metabolic rate monitoring and energy expenditure
 merged_data <- merged_data %>% 
                 mutate(activity_type = case_when(
                   ZCM >= 45 ~ "MVPA",
-                  ZCM == 0 ~ "Sleep",
+                  ZCM == 0 ~ "ZCM_Sleep",
                   ZCM > 0 & ZCM < 40 ~ "Sed_Light"
                 ))
 
-#SLEEP1 == 0 and ZCM > 5? 
+### Fix activity type for M_Sleep instead of ZCM sleep
 
-table(merged_data$activity_type)
+merged_data <- merged_data %>% 
+                mutate(activity_type_sleep = case_when(
+                  M_Sleep == 1 ~ "sleep",
+                  ZCM >= 45 ~ "mvpa",
+                  ZCM < 45 ~ "sed_light"
+                ))
 
-summary(merged_data$SLEEP1)
+table(merged_data$activity_type_sleep)
 
-merged_data$sleep <- merged_data$SLEEP1
+merged_data$M_Sleep <- as.numeric(merged_data$M_Sleep)
+merged_data$TIB <- as.numeric(merged_data$TIB)
+merged_data$SLP <- as.numeric(merged_data$SLP)
+merged_data$ZCM <- as.numeric(merged_data$ZCM)
 ```
 
 ## Creating total time of week for summary activities
@@ -79,30 +87,30 @@ merged_data$sleep <- merged_data$SLEEP1
 ```{r}
 merged_data <- merged_data %>%
 	mutate(sed_light_mvpa_minutes = case_when(
-		activity_type == "Sed_Light" ~ 1,
-		activity_type == "Sleep" ~ 0,
-		activity_type == "MVPA" ~ 1
+		activity_type_sleep == "sed_light" ~ 1,
+		activity_type_sleep == "sleep" ~ 0,
+		activity_type_sleep == "mvpa" ~ 1
 	))
 
 merged_data <- merged_data %>%
 	mutate(mvpa_minutes = case_when(
-		activity_type == "Sed_Light" ~ 0,
-		activity_type == "Sleep" ~ 0,
-		activity_type == "MVPA" ~ 1
+		activity_type_sleep == "sed_light" ~ 0,
+		activity_type_sleep == "sleep" ~ 0,
+		activity_type_sleep == "mvpa" ~ 1
 	))
 
 merged_data <- merged_data %>%
 	mutate(sed_light_minutes = case_when(
-		activity_type == "Sed_Light" ~ 1,
-		activity_type == "Sleep" ~ 0,
-		activity_type == "MVPA" ~ 0
+		activity_type_sleep == "sed_light" ~ 1,
+		activity_type_sleep == "sleep" ~ 0,
+		activity_type_sleep == "mvpa" ~ 0
 	))
 
 merged_data <- merged_data %>%
-	mutate(sleep_minutes_zcm = case_when(
-		activity_type == "Sed_Light" ~ 0,
-		activity_type == "Sleep" ~ 1,
-		activity_type == "MVPA" ~ 0
+	mutate(sleep = case_when(
+		activity_type_sleep == "sed_light" ~ 0,
+		activity_type_sleep == "sleep" ~ 1,
+		activity_type_sleep == "mvpa" ~ 0
 	))
 ```
 
@@ -110,19 +118,22 @@ merged_data <- merged_data %>%
 
 ```{r}
 merged_data$total_sleep_mvpa_light <- merged_data$sleep + merged_data$mvpa_minutes + merged_data$sed_light_minutes
-merged_data$total_sleep_mvpa_light_zcm <- merged_data$sleep_minutes_zcm + merged_data$mvpa_minutes + merged_data$sed_light_minutes
+
+table(merged_data$total_sleep_mvpa_light)
+
+summary(merged_data$total_sleep_mvpa_light)
 
 merged_data$day <- as.factor(merged_data$day)
 
 day <- merged_data %>%
   group_by(p_id, day, time) %>%
     summarise(sleep_minutes = sum(sleep),
-              sleep_minutes_zcm = sum(sleep_minutes_zcm),
               mvpa_minutes = sum(mvpa_minutes),
               sed_light_minutes = sum(sed_light_minutes),
               sed_light_mvpa_minutes = sum(sed_light_mvpa_minutes),
               total_sleep_mvpa_light = sum(total_sleep_mvpa_light),
-              total_sleep_mvpa_light_zcm = sum(total_sleep_mvpa_light_zcm),
+              tib = sum(TIB),
+              slp = sum(SLP),
               zcm = mean(ZCM),
               total_minutes = n()
               )
@@ -131,49 +142,23 @@ day$zcm <- as.integer(day$zcm)
 summary(day$total_minutes)
 ```
 
-A few observations are 7200 minutes in one day. Not sure why. Removing those observations. Prior to removing the observations there are 6989 observations in the day level dataset. 
-
-```{r}
-day <- filter(day, total_minutes <= 1440)
-```
-
-The new dataset has 6696 observations so we have removed 293 days of data, which represents 4.1% of the data. This is pretty normal. 
-
-## Checking sleep data
-
-```{r}
-merged_data$sleep = merged_data$SLEEP1
-
-merged_data$sleep_merge <- merged_data$sleep + merged_data$sleep_minutes_zcm
-
-summary(merged_data$sleep_merge)
-
-table(merged_data$sleep_merge)
-```
-
-Around 10% of the observations have sleep in for the SLEEP1 variable or the ZCM variable but not both. This tends to be more more on the SLEEP1 variable. 
-
 ## Plot of ZCM sleep versus SLEEP1 variable
 
 ```{r}
-sleep_plot <- ggplot(day, aes(x = sleep_minutes_zcm, y = sleep_minutes)) +
-              geom_point() +
+summary(day$sleep_minutes)
+sleep_plot <- ggplot(day, aes(x = sleep_minutes)) +
+              geom_histogram() +
               theme_classic()
 plot(sleep_plot)
 
-cor(x = day$sleep_minutes_zcm, y = day$sleep_minutes, use = "complete.obs")
 ```
 
-Correlation between the two is high but SLEEP1 variable tends to be higher based on the plot
+### Summary stats for all variables 
 
 ```{r}
 day %>%
   group_by(time) %>%
     get_summary_stats(sleep_minutes)
-
-day %>%
-  group_by(time) %>%
-    get_summary_stats(sleep_minutes_zcm)
 
 day %>%
   group_by(time) %>%
@@ -184,13 +169,11 @@ day %>%
     get_summary_stats(sed_light_minutes)
 ```
 
-Average sleep minutes are around 990minutes with the SLEEP1 variable and 930minutes with the ZCM method per day, meaning they are sleeping around 16.5 hours per day or 15.5 hours per day. Maybe they are sleeping this much. There are many days were pepole are in sleep the entire time. The MVPA per day is around 300 minutes and is very consistent across the waves. This is too much MVPA but the threshold we are using might be low as well. Sed, light is around 110 minutes per day (1.8 hours). That is pretty low.  
-
 ### Checking daily MVPA and sleep overtime
 
 ### Plot for Sleep 
 ```{r}
-sleep_plot <- ggplot(day, aes(x = day, y = sleep_minutes_zcm, group = time, colour = factor(time))) +
+sleep_plot <- ggplot(day, aes(x = day, y = sleep_minutes, group = time, colour = factor(time))) +
               geom_boxplot() +
               theme_classic()
 plot(sleep_plot)
@@ -215,15 +198,15 @@ plot(all_activity_plot)
 # Aggregating to the day level 
 
 ```{r}
-day_only <- day %>%
+day_summary <- day %>%
   group_by(p_id, time) %>%
     summarise(sleep_minutes = median(sleep_minutes, na.rm = TRUE),
-              sleep_minutes_zcm = mean(sleep_minutes_zcm, na.rm = TRUE),
               mvpa_minutes = mean(mvpa_minutes, na.rm = TRUE),
               sed_light_minutes = mean(sed_light_minutes, na.rm = TRUE),
               sed_light_mvpa_minutes = mean(sed_light_mvpa_minutes, na.rm = TRUE),
               total_sleep_mvpa_light = mean(total_sleep_mvpa_light, na.rm = TRUE),
-              total_sleep_mvpa_light_zcm = mean(total_sleep_mvpa_light_zcm, na.rm = TRUE),
+              tib = sum(tib, na.rm = TRUE),
+              slp = sum(slp, na.rm = TRUE),
               )
 ```
 
@@ -231,12 +214,12 @@ day_only <- day %>%
 
 ```{r}
 write_csv(day, "participant_days.csv")
-write_csv(day_only, "days.csv")
+write_csv(day_summary, "day_summary.csv")
 ```
 
 # Pivoting and writing to SAV (SPSS) format
 
-```{r}
+```{}
 day_only <- as.data.frame(day_only)
 
 day_only_wide <- reshape(day_only, direction = "wide", idvar = "p_id", timevar = "time", v.names = c("sleep_minutes", "sleep_minutes_zcm", "mvpa_minutes", "sed_light_minutes", "sed_light_mvpa_minutes", "total_sleep_mvpa_light", "total_sleep_mvpa_light_zcm"), sep = "_")
