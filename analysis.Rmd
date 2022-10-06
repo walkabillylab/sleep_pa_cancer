@@ -1,0 +1,53 @@
+---
+title: "Analysis"
+author: "Daniel Fuller"
+output:
+      html_document:
+        keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(rstatix)
+library(haven)
+library(kableExtra)
+library(lme4)
+```
+
+## Analysis for Sleep, PA Cancer
+
+```{r}
+data <- read_csv("/Users/dlf545/Documents/Ryan Collins Thesis/sleep_pa_cancer/analysis_data.csv")
+```
+
+## Quick example regression based on research question 1
+
+To examine if higher levels of MVPA at baseline are associated with better subjective and objective cognitive function outcomes at T4 (1-year post-diagnosis) in the first year of cancer diagnosis in women with breast cancer.
+
+* Outcome is subjective cognitive functionning (FACTCog_TOTAL_Score)
+* Predictors are minutes of MVPA, Sleep, T1_Caffeine, and BMI
+
+## Plot to check variation over time
+
+```{r}
+plot1 <- ggplot(data, aes(time, FACTCog_TOTAL_Score, group=p_id, color=p_id)) +
+  geom_smooth(method="lm", se=F) +
+  geom_jitter(size=1) +
+  theme(legend.position="none") 
+plot(plot1)
+```
+
+This plot shows the individual trajectories of participants over time for the subjective cognitive functionning (FACTCog_TOTAL_Score) measure. Clearly differences in individuals and slops (we will deal with slopes late).
+
+### Example regression
+
+```{r}
+model1 <- lmer(FACTCog_TOTAL_Score ~ sleep_minutes + mvpa_minutes + T1_Caffeine + BMI + (1 | p_id), data = data)
+summary(model1)
+```
+
+
+
+
