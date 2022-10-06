@@ -13,6 +13,7 @@ library(tidyverse)
 library(lubridate)
 library(rstatix)
 library(haven)
+library(kableExtra)
 ```
 
 # Data Wrangling for Sleep, PA, and Cancer study
@@ -38,6 +39,30 @@ table(merged_data$time)
 rm(sleep_data_temp)
 ```
 
+### Removing participants with bad data
+
+Removed during data cleaning 
+- 11, 13, 20, 29, 32, 78, 86, 87, 90, 94, 103
+
+Removed because only provided baseline data
+- 28, 34, 39, 43, 54, 65, 67, 70, 84, 87, 93
+
+```{r}
+merged_data <- filter(merged_data, p_id != "028" & 
+                                    p_id != "034" & 
+                                    p_id != "039" & 
+                                    p_id != "043" & 
+                                    p_id != "054" & 
+                                    p_id != "065" & 
+                                    p_id != "067" & 
+                                    p_id != "070" & 
+                                    p_id != "084" & 
+                                    p_id != "093")
+
+table(merged_data$p_id)
+```
+
+
 ### Combining the time variables and creating a week variable
 
 ```{r}
@@ -54,17 +79,9 @@ I'm using a generalization of method from this paper
 Moran DS, Heled Y, Gonzalez RR. Metabolic rate monitoring and energy expenditure prediction using a novel actigraphy method. Med Sci Monit. 2004 Nov;10(11):MT117-20. Epub 2004 Oct 26. PMID: 15507861. [https://pubmed.ncbi.nlm.nih.gov/15507861/](https://pubmed.ncbi.nlm.nih.gov/15507861/)
 
 - ZCM of 40 or greater is moderate to vigorous activity
-- ZCM of 0 is sleep (**This is probably WRONG**)
 - ZCM of sedentary to light activity is ZCM greater than 0 less than 40 
 
 ```{r}
-merged_data <- merged_data %>% 
-                mutate(activity_type = case_when(
-                  ZCM >= 45 ~ "MVPA",
-                  ZCM == 0 ~ "ZCM_Sleep",
-                  ZCM > 0 & ZCM < 40 ~ "Sed_Light"
-                ))
-
 ### Fix activity type for M_Sleep instead of ZCM sleep
 
 merged_data <- merged_data %>% 
@@ -229,4 +246,25 @@ day_only_wide$ParticipantNumber <- seq(1:97)
 ## SAV
 write_sav(day_only_wide, "days_wide.sav")
 ```
+
+### Stack overflow
+
+```{r}
+spss_data <- read_sav("Ryan Thesis Dataset.sav")
+
+spss_data1 <- select(spss_data, ParticipantNumber, T1_MFSI_total, T2_MFSI_total, T3_MFSI_total, T4_MFSI_total, T1_MFSI_Vig, T2_MFSI_Vig, T3_MFSI_Vig, T4_MFSI_Vig)
+
+spss_data1 <- filter(spss_data1, ParticipantNumber < 5)
+
+kable(spss_data1, "markdown")
+
+spss_data1 <- spss_data1 %>% 
+  pivot_longer(-ParticipantNumber) %>% 
+  separate(name, into = c("time", "name"), sep = 3) 
+
+kbl(spss_data1, "markdown")
+
+spss_data1$time <- str_replace(spss_data1$time, "_", "")
+```
+
 
