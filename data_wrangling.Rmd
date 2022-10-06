@@ -97,6 +97,8 @@ merged_data$M_Sleep <- as.numeric(merged_data$M_Sleep)
 merged_data$TIB <- as.numeric(merged_data$TIB)
 merged_data$SLP <- as.numeric(merged_data$SLP)
 merged_data$ZCM <- as.numeric(merged_data$ZCM)
+
+merged_data$time <- str_replace_all(merged_data$time, "t", toupper)
 ```
 
 ## Creating total time of week for summary activities
@@ -234,37 +236,51 @@ write_csv(day, "participant_days.csv")
 write_csv(day_summary, "day_summary.csv")
 ```
 
-# Pivoting and writing to SAV (SPSS) format
-
-```{}
-day_only <- as.data.frame(day_only)
-
-day_only_wide <- reshape(day_only, direction = "wide", idvar = "p_id", timevar = "time", v.names = c("sleep_minutes", "sleep_minutes_zcm", "mvpa_minutes", "sed_light_minutes", "sed_light_mvpa_minutes", "total_sleep_mvpa_light", "total_sleep_mvpa_light_zcm"), sep = "_")
-
-day_only_wide$ParticipantNumber <- seq(1:97)
-
-## SAV
-write_sav(day_only_wide, "days_wide.sav")
-```
-
-### Stack overflow
+### Reshaping SPSS data
 
 ```{r}
 spss_data <- read_sav("Ryan Thesis Dataset.sav")
 
-spss_data1 <- select(spss_data, ParticipantNumber, T1_MFSI_total, T2_MFSI_total, T3_MFSI_total, T4_MFSI_total, T1_MFSI_Vig, T2_MFSI_Vig, T3_MFSI_Vig, T4_MFSI_Vig)
+spss_data$T1_HVLTR_totalrecall <- spss_data$HVLTR_totalrecall
+spss_data$T1_LNS <- spss_data$LNS
 
-spss_data1 <- filter(spss_data1, ParticipantNumber < 5)
+spss_data1 <- select(spss_data, ParticipantNumber, T1_FACTCog_TOTAL_Score, T2_FACTCog_TOTAL_Score, T3_FACTCog_TOTAL_Score, T4_FACTCog_TOTAL_Score, T1_HVLTR_totalrecall, T2_HVLTR_totalrecall, T3_HVLTR_totalrecall, T4_HVLTR_totalrecall, T1_MFSI_total, T2_MFSI_total, T3_MFSI_total, T4_MFSI_total, T1_LNS, T2_LNS, T3_LNS, T4_LNS, T1_HADS_depsum, T2_HADS_depsum, T3_HADS_depsum, T4_HADS_depsum, T1_HADS_anxsum, T2_HADS_anxsum, T3_HADS_anxsum, T4_HADS_anxsum)
 
-kable(spss_data1, "markdown")
-
-spss_data1 <- spss_data1 %>% 
+spss_data_small <- spss_data1 %>% 
   pivot_longer(-ParticipantNumber) %>% 
-  separate(name, into = c("time", "name"), sep = 3) 
+  separate(name, into = c("time", "name"), sep = 3) %>%
+  pivot_wider(values_fn=sum)
 
-kbl(spss_data1, "markdown")
+spss_data_small$time <- str_replace(spss_data_small$time, "_", "")
+spss_data_small$p_id <- spss_data_small$ParticipantNumber
 
-spss_data1$time <- str_replace(spss_data1$time, "_", "")
+spss_data_small$p_id <- str_pad(spss_data_small$p_id, width=3, side="left", pad="0")
 ```
 
+### Pulling demographic data
+
+```{r}
+spss_data_demo <- spss_data %>% select(1:85)
+
+spss_data_demo$p_id <- spss_data_demo$ParticipantNumber
+spss_data_demo$p_id <- str_pad(spss_data_demo$p_id, width=3, side="left", pad="0")
+```
+
+### Joining sleep and PA data to SPSS data
+
+```{r}
+spss_data_small$p_id <- as.character(spss_data_small$p_id)
+
+data_joined <- day_summary %>% left_join(spss_data_small, by = c("p_id", "time"))
+
+data <- data_joined %>% full_join(spss_data_demo, by = c("p_id"))
+
+glimpse(data)
+```
+
+## Write the analysis dataset
+
+```{r}
+write.csv(data, "analysis_data.csv")
+```
 
